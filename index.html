@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Book Abhi · AI Flight Itinerary Generator</title>
+  <meta name="description" content="Transform a booking-portal flight confirmation into a customer-ready Book Abhi itinerary.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <button class="brand" data-act="home" aria-label="Book Abhi home">
+        <svg width="32" height="32" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#1B2766"/><path d="M11 27.5 20.5 20 11 12.5" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 27.5 29.5 20 20 12.5" fill="none" stroke="#F4A51C" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span><span class="wm">BOOK <span>ABHI</span></span><small>AI Flight Itinerary Generator</small></span>
+      </button>
+      <nav class="stepper" id="stepper" aria-label="Progress"></nav>
+      <button class="btn primary" data-act="new">+ New Itinerary</button>
+    </header>
+    <main class="main" id="main"></main>
+  </div>
+  <div id="stage" aria-hidden="true"><div id="measure"></div><div id="capture"></div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
