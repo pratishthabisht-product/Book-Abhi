@@ -1,11 +1,32 @@
 # Book Abhi — AI Flight Itinerary Generator
 
-Interview prototype. Turns a raw booking-portal flight confirmation PDF into a branded,
+Turns a flight booking confirmation (any portal PDF, a scan, a screenshot or a photo) into a branded,
 customer-ready Book Abhi itinerary:
 
-**Upload → Extract → Review → Preview → Download PDF**
+**Upload → Read → Verify → Review → Preview → Download PDF**
 
-Everything runs in the browser. No backend, database, API key or environment variables.
+## How a document is read
+
+```
+document ──► 1. Built-in reader ──(known portal format, all fields found)──► checks ──► agent review
+                 │ not recognised / gaps
+                 ▼
+             2. AI reading (/api/extract → Claude)  ── only if ANTHROPIC_API_KEY is set
+                 │ not available / failed
+                 ▼
+             3. Manual entry (preview and PDF still work)
+```
+
+**Checks** (`src/extraction/verify.js`) run on every result, whichever way it was read:
+
+- **Found in the document:** each value (or a standard rewrite of it: 21:30 ↔ 2130, 3h 25m ↔ 03:25, 35 KG ↔ 35K) must appear in the source text. If it doesn't, the field is marked *Review*.
+- **Reference data:** airport code ↔ city, airline code ↔ airline name, flight number prefix, ticket prefix (176 = Emirates, 618 = Singapore Airlines…).
+- **Time zones:** departure time + duration must equal the arrival time in the arrival airport's time zone.
+- **Scans and photos:** free-text fields (names, references, tickets) are always marked for a human look.
+
+The AI step only reads. It is told to copy values exactly, leave missing ones empty and never guess. It
+returns a fixed JSON schema (`api/_lib/claude.js`), and nothing reaches the customer PDF until the
+agent has reviewed it.
 
 ## Run locally
 
@@ -13,49 +34,56 @@ Requires Node.js 18 or newer.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+npm run dev            # http://localhost:5173
 ```
 
-Production build check:
+To switch on AI reading locally, create a file called `.env.local` next to `package.json`:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+# optional: ANTHROPIC_MODEL=claude-sonnet-5-5
+```
+
+Never commit this file (it's in `.gitignore`).
+
+## Deploy to Vercel
+
+Upload the project to GitHub and import it in Vercel. Then, to switch on AI reading:
+
+1. Vercel → your project → **Settings → Environment Variables**
+2. Add `ANTHROPIC_API_KEY` with your key from console.anthropic.com
+3. **Deployments → ⋯ → Redeploy**
+
+Without the key, the site still works with the built-in reader and manual entry. The upload page shows
+"AI reading on" or "Built-in reader only".
+
+## Measuring accuracy
 
 ```bash
-npm run build
-npm run preview      # http://localhost:4173
+npm run eval             # built-in reader on every file in eval/cases/
+npm run eval -- --ai     # also AI reading (uses ANTHROPIC_API_KEY from .env.local)
 ```
 
-## Deploy to Vercel (CLI, no GitHub needed)
-
-```bash
-npm install -g vercel
-vercel login         # first time only
-vercel               # preview deployment; accept the detected Vite settings
-vercel --prod        # production URL to share
-```
-
-`vercel.json` already sets the framework (Vite), the build command and the output folder (`dist`).
-
-## Demo script
-
-1. Open the URL and click **Use Demo Booking**. This loads the real Emirates EK512 confirmation (PARSHOTAM KUMAR, 9UJ4L6).
-2. Watch the extraction steps and the highlighted source text.
-3. **Review Booking Details**: every field is editable and marked ✓ / Review / Needs review / Edited.
-4. Click **Generate Book Abhi Itinerary**. Edit a field on the left (for example baggage 35 KG → 30 KG) and the preview updates.
-5. Click **Download PDF** to get an A4 Book Abhi itinerary.
-
-Other journey types: **Create New Itinerary** → *More sample confirmations* (round trip, one stop,
-two stops, multiple airlines, self-transfer, missing arrival time, damaged file). You can also upload any
-of the PDFs in `public/samples/` from your computer.
+Each test document needs a `<name>.expected.json` with the correct values. Put real customer bookings in
+`eval/private/` (git-ignored). `npm run eval -- --write-expected` drafts expected files from the current
+output, but you must check them by hand. The number that matters most is **SILENT errors**: wrong values
+that were not flagged for review.
 
 ## Code map
 
-| Module | Role |
+| Path | Role |
 | --- | --- |
-| `src/extraction/extractBookingData.js` | `extractBookingData()`: pdf.js text layer, then parser, then `ItineraryData` and a confidence map. **Swap-in point for a future AI extraction service.** |
-| `src/extraction/_parser.js` | Deterministic parser for the portal's Amadeus-style "TRAVEL SUMMARY" format |
-| `src/model/ItineraryData.js` | Data model, empty factories, validation, nested journey view |
-| `src/model/demoBooking.js` | `demoBooking`: the EK512 sample as data (fallback if PDF parsing ever fails) |
-| `src/journey/classifyJourney.js` | `classifyJourney()`: one-way / round trip / multi-city, stops, layovers, airlines, PNRs, baggage differences, self-transfer, terminal and airport changes, next-day arrival, alerts |
-| `src/render/ItineraryPreview.js` + `_blocks.js` | `ItineraryPreview`: Book Abhi design system laid out into A4 pages |
-| `src/pdf/generatePDF.js` | `generatePDF()` / `downloadPDF()`: html2canvas + jsPDF, all in the browser |
-| `src/config.js` | Optional support phone and email for the PDF footer (hidden when empty) |
-| `src/main.js` | Agent UI and workflow |
+| `src/extraction/extractBookingData.js` | Pipeline: built-in reader → AI → manual, then checks |
+| `src/extraction/_parser.js` | Built-in reader for the portal's "TRAVEL SUMMARY" format |
+| `api/extract.js`, `api/_lib/claude.js` | Server function that calls Claude (key stays on the server) |
+| `src/extraction/aiMapping.js` | AI JSON → ItineraryData |
+| `src/extraction/verify.js` | Checks and confidence flags |
+| `src/data/airports.json`, `airlines.json` | Reference data from OpenFlights (openflights.org, ODbL licence) |
+| `src/model/`, `src/journey/`, `src/render/`, `src/pdf/` | Data model, journey logic, Book Abhi design, PDF builder |
+| `scripts/eval.mjs`, `eval/cases/` | Accuracy runner and test documents |
+
+## Cost and privacy (AI reading)
+
+- **Cost and speed:** a typical 1–2 page booking is a few thousand tokens, so roughly a few US cents per document with Claude Sonnet. Check current pricing.
+- **What gets sent:** the document goes to the Anthropic API only when the built-in reader can't handle it. Nothing is stored by this app.
+- **Personal data:** bookings contain passenger names and ticket numbers. Tell the business owner where documents are processed.
